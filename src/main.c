@@ -13,34 +13,33 @@
 const uint8_t USART2_RX_PIN = 3; // PA3 is used as USART2_RX
 const uint8_t USART2_TX_PIN = 2; // PA2 is used as USART2_TX
 
-uint8_t nState = 0;
+// FIFO
 volatile Fifo_t uart_rx_fifo;
 volatile char uart_read_out[FIFO_SIZE+1];
+
+// Game Components
+#define COLS 10
+#define ROWS 10 
+short int nState;
+long int cs;
+unsigned int x = 1, y = 1;
+char result;
 
 // For supporting printf function we override the _write function to redirect the output to UART
 int _write(int handle, char *data, int size)
 {
-	// 'handle' is typically ignored in this context, as we're redirecting all output to USART2
-	// 'data' is a pointer to the buffer containing the data to be sent
-	// 'size' is the number of bytes to send
-
 	int count = size; // Make a copy of the size to use in the loop
 
-	// Loop through each byte in the data buffer
-	while (count--)
+	while (count--)	// Loop through each byte in the data buffer
 	{
-		// Wait until the transmit data register (TDR) is empty,
-		// indicating that USART2 is ready to send a new byte
+		// Wait until the transmit data register (TDR) is empty, indicating that USART2 is ready to send a new byte
 		while (!(USART2->ISR & USART_ISR_TXE))
 		{
 			// Wait here (busy wait) until TXE (Transmit Data Register Empty) flag is set
 		}
-
-		// Load the next byte of data into the transmit data register (TDR)
-		// This sends the byte over UART
+		// Load the next byte of data into the transmit data register (TDR). This sends the byte over UART
 		USART2->TDR = *data++;	// The pointer 'data' is incremented to point to the next byte to send
 	}
-
 	return size;				// Return the total number of bytes that were written
 }
 
@@ -51,6 +50,10 @@ void USART2_IRQHandler(void)
 	{
 		uint8_t c = USART2->RDR;					// Read received byte from RDR (this automatically clears the RXNE flag)
 		ret = fifo_put((Fifo_t *)&uart_rx_fifo, c); // Put incoming Data into the FIFO Buffer for later handling
+
+		//char checksum_str_buffer[11];
+		//char x_str_buffer[4];
+		//char y_str_buffer[4];
 		if (c == '\n')
 		{
 			uint8_t i = 0;
@@ -60,11 +63,9 @@ void USART2_IRQHandler(void)
 				i++;
 			}
 			uart_read_out[i] = '\0';
-			if (strcmp((const char *)uart_read_out, "HD_START\r\n") == 0) {
-				nState = 1;
-			}
     	}
 	}
+	USART2->ISR &= ~(0b1 << 3);
 }
 
 int main(void)
@@ -81,11 +82,11 @@ int main(void)
 	GPIOA->MODER |= 0b10 << (USART2_RX_PIN * 2);		// Set PA3 to Alternate Function mode
 	GPIOA->AFR[0] |= 0b0001 << (4 * USART2_RX_PIN); 	// Set AF for PA3 (USART2_RX)
 
-	USART2->BRR = (APB_FREQ / BAUDRATE); // Set baud rate (requires APB_FREQ to be defined)
-	USART2->CR1 |= 0b1 << 2;						 // Enable receiver (RE bit)
-	USART2->CR1 |= 0b1 << 3;						 // Enable transmitter (TE bit)
-	USART2->CR1 |= 0b1 << 0;						 // Enable USART (UE bit)
-	USART2->CR1 |= 0b1 << 5;						 // Enable RXNE interrupt (RXNEIE bit)
+	USART2->BRR = (APB_FREQ / BAUDRATE); 				// Set baud rate (requires APB_FREQ to be defined)
+	USART2->CR1 |= 0b1 << 2;						 	// Enable receiver (RE bit)
+	USART2->CR1 |= 0b1 << 3;						 	// Enable transmitter (TE bit)
+	USART2->CR1 |= 0b1 << 0;						 	// Enable USART (UE bit)
+	USART2->CR1 |= 0b1 << 5;						 	// Enable RXNE interrupt (RXNEIE bit)
 
 	NVIC_SetPriorityGrouping(0);								// Use 4 bits for priority, 0 bits for subpriority
 	uint32_t uart_pri_encoding = NVIC_EncodePriority(0, 1, 0); 	// Encode priority: group 1, subpriority 0
@@ -93,19 +94,84 @@ int main(void)
 	NVIC_EnableIRQ(USART2_IRQn);								// Enable USART2 interrupt
 
 	fifo_init((Fifo_t *)&uart_rx_fifo); // Init the FIFO
+	nState = 0;
+
+	int8_t my_game_field[ROWS * COLS] = {	
+		2,0,0,3,0,0,0,0,0,0,
+    	2,0,0,3,0,4,4,4,4,0,
+    	0,0,0,3,0,0,0,0,0,0,
+    	5,0,0,0,0,0,2,0,0,0,
+   		5,0,2,0,4,0,2,0,0,0,
+    	5,0,2,0,4,0,0,0,0,3,
+    	5,0,0,0,4,0,2,0,0,3,
+    	5,0,0,0,4,0,2,0,0,3,
+    	0,0,0,0,0,0,0,0,0,0,
+    	0,3,3,3,0,0,0,0,0,0};
+
+	uint32_t my_cs = 2612444403;
 
 	for (;;) // Infinite loop
 	{
 		switch (nState) {
 			case 0: // Read Game Start
-				// Wait until HD_START gets read out from UART 
-				break;
+				// Wait for Game Start
+				if (strcmp((const char *)uart_read_out, "HD_START\r\n")) {
+					break;
+				}else nState = 1;
+
 			case 1: // Write Game Start
-				LOG("DH_START_KEVIN");
+				LOG("DH_START_KEVIN\r\n");
 				nState = 2;
 				break;
-			case 2: //
+
+			case 2: // Read CS
+				if (strncmp((const char *)uart_read_out, "HD_CS_", 6)){
+					sscanf((const char *)uart_read_out, "HD_CS_%ld\r\n", &cs);
+				} else break;
+
+				if (cs == 0){
+					break;
+				}else nState = 3;
+				
+			case 3: // Write CS
+				LOG("DH_CS_%lu\r\n", my_cs);
+				nState = 4;
+				break;
+
+			case 4: // Read Boom
+				// Wait for Boom 
+				if (strncmp((const char *)uart_read_out, "HD_BOOM_", 8)){
+					sscanf((const char *)uart_read_out, "HD_BOOM_%u_%u\r\n", &x, &y);
+				} else break;
+
+				if (x == 0 || y == 0){
+					break;
+				}else nState = 5;
+
+			case 5: // Write HM
+				LOG("DH_BOOM_M\r\n");
+				nState = 6;
+				break;
+
+			case 6: // Write Boom
+				LOG("DH_BOOM_%u_%u\r\n", x, y);
+				nState = 7;
+				break;
+
+			case 7: // Read HM
+				// Wait HM
+				if (strncmp((const char *)uart_read_out, "HD_BOOM_", 8)){
+					sscanf((const char *)uart_read_out, "HD_BOOM_%c\r\n", &result);
+				} else break;
+
+				if (result == 0){
+					break;
+				}else nState = 4;
+
+			case 8: // Win/Lose
+				
 				break;
 		}
 	}
+	return 0;
 }
