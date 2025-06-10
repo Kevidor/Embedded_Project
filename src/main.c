@@ -21,9 +21,36 @@ volatile char uart_read_out[FIFO_SIZE+1];
 #define COLS 10
 #define ROWS 10 
 short int nState;
-long int cs;
+uint32_t cs = 0;
 unsigned int x = 1, y = 1;
 char result;
+
+int8_t my_game_field[ROWS * COLS] = {	
+	2,0,0,3,0,0,0,0,0,0,
+	2,0,0,3,0,4,4,4,4,0,
+	0,0,0,3,0,0,0,0,0,0,
+	5,0,0,0,0,0,2,0,0,0,
+	5,0,2,0,4,0,2,0,0,0,
+	5,0,2,0,4,0,0,0,0,3,
+	5,0,0,0,4,0,2,0,0,3,
+	5,0,0,0,4,0,2,0,0,3,
+	0,0,0,0,0,0,0,0,0,0,
+	0,3,3,3,0,0,0,0,0,0};
+
+int8_t my_game_field_copy[ROWS * COLS] = {	
+	2,0,0,3,0,0,0,0,0,0,
+	2,0,0,3,0,4,4,4,4,0,
+	0,0,0,3,0,0,0,0,0,0,
+	5,0,0,0,0,0,2,0,0,0,
+	5,0,2,0,4,0,2,0,0,0,
+	5,0,2,0,4,0,0,0,0,3,
+	5,0,0,0,4,0,2,0,0,3,
+	5,0,0,0,4,0,2,0,0,3,
+	0,0,0,0,0,0,0,0,0,0,
+	0,3,3,3,0,0,0,0,0,0};
+
+uint32_t my_cs = 2612444403;
+int hits = 30;
 
 // For supporting printf function we override the _write function to redirect the output to UART
 int _write(int handle, char *data, int size)
@@ -51,9 +78,6 @@ void USART2_IRQHandler(void)
 		uint8_t c = USART2->RDR;					// Read received byte from RDR (this automatically clears the RXNE flag)
 		ret = fifo_put((Fifo_t *)&uart_rx_fifo, c); // Put incoming Data into the FIFO Buffer for later handling
 
-		//char checksum_str_buffer[11];
-		//char x_str_buffer[4];
-		//char y_str_buffer[4];
 		if (c == '\n')
 		{
 			uint8_t i = 0;
@@ -96,20 +120,6 @@ int main(void)
 	fifo_init((Fifo_t *)&uart_rx_fifo); // Init the FIFO
 	nState = 0;
 
-	int8_t my_game_field[ROWS * COLS] = {	
-		2,0,0,3,0,0,0,0,0,0,
-    	2,0,0,3,0,4,4,4,4,0,
-    	0,0,0,3,0,0,0,0,0,0,
-    	5,0,0,0,0,0,2,0,0,0,
-   		5,0,2,0,4,0,2,0,0,0,
-    	5,0,2,0,4,0,0,0,0,3,
-    	5,0,0,0,4,0,2,0,0,3,
-    	5,0,0,0,4,0,2,0,0,3,
-    	0,0,0,0,0,0,0,0,0,0,
-    	0,3,3,3,0,0,0,0,0,0};
-
-	uint32_t my_cs = 2612444403;
-
 	for (;;) // Infinite loop
 	{
 		switch (nState) {
@@ -125,7 +135,7 @@ int main(void)
 				break;
 
 			case 2: // Read CS
-				if (strncmp((const char *)uart_read_out, "HD_CS_", 6)){
+				if (strncmp((const char *)uart_read_out, "HD_CS_", 6) == 0){
 					sscanf((const char *)uart_read_out, "HD_CS_%ld\r\n", &cs);
 				} else break;
 
@@ -140,16 +150,29 @@ int main(void)
 
 			case 4: // Read Boom
 				// Wait for Boom 
-				if (strncmp((const char *)uart_read_out, "HD_BOOM_", 8)){
+				if (strncmp((const char *)uart_read_out, "HD_BOOM_", 8) == 0){
 					sscanf((const char *)uart_read_out, "HD_BOOM_%u_%u\r\n", &x, &y);
 				} else break;
 
-				if (x == 0 || y == 0){
+				if (x < 0 || y < 0){
 					break;
 				}else nState = 5;
 
 			case 5: // Write HM
-				LOG("DH_BOOM_M\r\n");
+				if (hits <= 0) {
+					nState = 9;
+					break;
+				}
+
+				if (my_game_field[y * COLS + x] != '0') {
+					my_game_field[y * COLS + x] = 'H';
+					hits -= 1;
+					LOG("DH_BOOM_H\r\n");
+				}else {
+					my_game_field[y * COLS + x] = 'M';
+					LOG("DH_BOOM_M\r\n");
+				}
+
 				nState = 6;
 				break;
 
@@ -160,16 +183,19 @@ int main(void)
 
 			case 7: // Read HM
 				// Wait HM
-				if (strncmp((const char *)uart_read_out, "HD_BOOM_", 8)){
+				if (strncmp((const char *)uart_read_out, "HD_BOOM_", 8) == 0){
 					sscanf((const char *)uart_read_out, "HD_BOOM_%c\r\n", &result);
 				} else break;
 
-				if (result == 0){
-					break;
-				}else nState = 4;
+				nState = 4;
+				break;
 
-			case 8: // Win/Lose
-				
+			case 8: // Win
+				LOG("HD_SF\r\n");
+				break;
+			
+			case 9: // Lose
+				LOG("DH_SF\r\n");
 				break;
 		}
 	}
