@@ -119,7 +119,6 @@ int main(void)
 
 	fifo_init((Fifo_t *)&uart_rx_fifo); // Init the FIFO
 	nState = 0;
-
 	for (;;) // Infinite loop
 	{
 		switch (nState) {
@@ -160,16 +159,16 @@ int main(void)
 
 			case 5: // Write HM
 				if (hits <= 0) {
-					nState = 9;
+					nState = 8;
 					break;
 				}
 
-				if (my_game_field[y * COLS + x] != '0') {
-					my_game_field[y * COLS + x] = 'H';
+				if (my_game_field_copy[x * COLS + y] != 0) {
+					my_game_field_copy[x * COLS + y] = 'H';
 					hits -= 1;
 					LOG("DH_BOOM_H\r\n");
 				}else {
-					my_game_field[y * COLS + x] = 'M';
+					my_game_field_copy[x * COLS + y] = 'M';
 					LOG("DH_BOOM_M\r\n");
 				}
 
@@ -189,13 +188,13 @@ int main(void)
 
 				nState = 4;
 				break;
-
-			case 8: // Win
-				LOG("HD_SF\r\n");
-				break;
 			
-			case 9: // Lose
-				LOG("DH_SF\r\n");
+			case 8: // Lose
+				LOG("DH_SF%uD", x);	
+				for (int i = 0; i <= COLS-1; i++)
+					LOG("%d", my_game_field[x * COLS + i]);
+				LOG("\r\n");
+				nState = 0;
 				break;
 		}
 	}
