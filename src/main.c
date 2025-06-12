@@ -21,33 +21,45 @@ volatile char uart_read_out[FIFO_SIZE+1];
 #define COLS 10
 #define ROWS 10 
 short int nState;
-uint32_t cs = 0;
-unsigned int x = 1, y = 1;
+uint8_t enemy_cs[10];
+unsigned int x, y;
 char result;
 
-int8_t my_game_field[ROWS * COLS] = {	
-	2,0,0,3,0,0,0,0,0,0,
-	2,0,0,3,0,4,4,4,4,0,
-	0,0,0,3,0,0,0,0,0,0,
-	5,0,0,0,0,0,2,0,0,0,
-	5,0,2,0,4,0,2,0,0,0,
-	5,0,2,0,4,0,0,0,0,3,
-	5,0,0,0,4,0,2,0,0,3,
-	5,0,0,0,4,0,2,0,0,3,
-	0,0,0,0,0,0,0,0,0,0,
-	0,3,3,3,0,0,0,0,0,0};
+char my_game_field[ROWS * COLS] = {	
+	'2','0','0','3','0','0','0','0','0','0',
+	'2','0','0','3','0','4','4','4','4','0',
+	'0','0','0','3','0','0','0','0','0','0',
+	'5','0','0','0','0','0','2','0','0','0',
+	'5','0','2','0','4','0','2','0','0','0',
+	'5','0','2','0','4','0','0','0','0','3',
+	'5','0','0','0','4','0','2','0','0','3',
+	'5','0','0','0','4','0','2','0','0','3',
+	'0','0','0','0','0','0','0','0','0','0',
+	'0','3','3','3','0','0','0','0','0','0'};
 
-int8_t my_game_field_copy[ROWS * COLS] = {	
-	2,0,0,3,0,0,0,0,0,0,
-	2,0,0,3,0,4,4,4,4,0,
-	0,0,0,3,0,0,0,0,0,0,
-	5,0,0,0,0,0,2,0,0,0,
-	5,0,2,0,4,0,2,0,0,0,
-	5,0,2,0,4,0,0,0,0,3,
-	5,0,0,0,4,0,2,0,0,3,
-	5,0,0,0,4,0,2,0,0,3,
-	0,0,0,0,0,0,0,0,0,0,
-	0,3,3,3,0,0,0,0,0,0};
+char my_game_field_copy[ROWS * COLS] = {	
+	'2','0','0','3','0','0','0','0','0','0',
+	'2','0','0','3','0','4','4','4','4','0',
+	'0','0','0','3','0','0','0','0','0','0',
+	'5','0','0','0','0','0','2','0','0','0',
+	'5','0','2','0','4','0','2','0','0','0',
+	'5','0','2','0','4','0','0','0','0','3',
+	'5','0','0','0','4','0','2','0','0','3',
+	'5','0','0','0','4','0','2','0','0','3',
+	'0','0','0','0','0','0','0','0','0','0',
+	'0','3','3','3','0','0','0','0','0','0'};
+
+char enemy_game_field[ROWS * COLS] = {	
+	'2','0','0','3','0','0','0','0','0','0',
+	'2','0','0','3','0','4','4','4','4','0',
+	'0','0','0','3','0','0','0','0','0','0',
+	'5','0','0','0','0','0','2','0','0','0',
+	'5','0','2','0','4','0','2','0','0','0',
+	'5','0','2','0','4','0','0','0','0','3',
+	'5','0','0','0','4','0','2','0','0','3',
+	'5','0','0','0','4','0','2','0','0','3',
+	'0','0','0','0','0','0','0','0','0','0',
+	'0','3','3','3','0','0','0','0','0','0'};
 
 uint32_t my_cs = 2612444403;
 int hits = 30;
@@ -89,7 +101,8 @@ void USART2_IRQHandler(void)
 			uart_read_out[i] = '\0';
     	}
 	}
-	USART2->ISR &= ~(0b1 << 3);
+	//USART2->ISR &= ~(0b1 << 3);
+	USART2->ICR = 0xffffffff;
 }
 
 int main(void)
@@ -119,6 +132,9 @@ int main(void)
 
 	fifo_init((Fifo_t *)&uart_rx_fifo); // Init the FIFO
 	nState = 0;
+	for(int i = 0;i <= 0;i++) enemy_cs[i] = 0;
+	x = 0;
+	y = 0;
 	for (;;) // Infinite loop
 	{
 		switch (nState) {
@@ -135,12 +151,10 @@ int main(void)
 
 			case 2: // Read CS
 				if (strncmp((const char *)uart_read_out, "HD_CS_", 6) == 0){
-					sscanf((const char *)uart_read_out, "HD_CS_%ld\r\n", &cs);
-				} else break;
-
-				if (cs == 0){
+					for (int i = 0;i <= 9;i++) enemy_cs[i] = uart_read_out[i+6];
+					nState = 3;
 					break;
-				}else nState = 3;
+				} else break;
 				
 			case 3: // Write CS
 				LOG("DH_CS_%lu\r\n", my_cs);
@@ -150,26 +164,25 @@ int main(void)
 			case 4: // Read Boom
 				// Wait for Boom 
 				if (strncmp((const char *)uart_read_out, "HD_BOOM_", 8) == 0){
-					sscanf((const char *)uart_read_out, "HD_BOOM_%u_%u\r\n", &x, &y);
+					x = uart_read_out[8] - '0';
+					y = uart_read_out[10] - '0';
+					uart_read_out[0] = '\0';
+					nState = 5;
+					break;
 				} else break;
 
-				if (x < 0 || y < 0){
-					break;
-				}else nState = 5;
-
 			case 5: // Write HM
-				if (hits <= 0) {
-					nState = 8;
-					break;
-				}
-
-				if (my_game_field_copy[x * COLS + y] != 0) {
-					my_game_field_copy[x * COLS + y] = 'H';
-					hits -= 1;
-					LOG("DH_BOOM_H\r\n");
-				}else {
+				if (my_game_field_copy[x * COLS + y] == '0') {
 					my_game_field_copy[x * COLS + y] = 'M';
 					LOG("DH_BOOM_M\r\n");
+				}else {
+					my_game_field_copy[x * COLS + y] = 'H';
+					hits -= 1;
+					if (hits <= 0) {
+						nState = 8;
+						break;
+					}
+					LOG("DH_BOOM_H\r\n");
 				}
 
 				nState = 6;
@@ -182,20 +195,44 @@ int main(void)
 
 			case 7: // Read HM
 				// Wait HM
+				if (strncmp((const char *)uart_read_out, "HD_SF9", 6) == 0)
+				{
+					nState = 9;
+					break;
+				}
 				if (strncmp((const char *)uart_read_out, "HD_BOOM_", 8) == 0){
-					sscanf((const char *)uart_read_out, "HD_BOOM_%c\r\n", &result);
+					//sscanf((const char *)uart_read_out, "HD_BOOM_%c\r\n", &result);
+					result = uart_read_out[8];
+					uart_read_out[0] = '\0';
 				} else break;
 
 				nState = 4;
 				break;
 			
 			case 8: // Lose
-				LOG("DH_SF%uD", x);	
-				for (int i = 0; i <= COLS-1; i++)
-					LOG("%d", my_game_field[x * COLS + i]);
-				LOG("\r\n");
+				for (int i = 0; i <= ROWS-1; i++)
+				{
+					LOG("DH_SF%uD", i);	
+					for (int j = 0; j <= COLS-1; j++)
+					{
+						LOG("%d", my_game_field[i * COLS + j] - '0');
+					}
+					LOG("\r\n");
+				}
+			nState = 0;
+			break;
+
+			case 9:
+				if (strncmp((const char *)uart_read_out, "HD_SF9", 6) == 0){
+					for (int i = 0; i <= ROWS-1; i++)
+					{
+						LOG("DH_SF%uD", i);	
+						for (int j = 0; j <= COLS-1; j++)
+							LOG("%d", my_game_field[i * COLS + j]);
+						LOG("\r\n");
+					}
+				} else break;
 				nState = 0;
-				break;
 		}
 	}
 	return 0;
