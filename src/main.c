@@ -65,7 +65,8 @@ void seed_rng_from_adc(void) // Von Hannes
     adc_value = ADC1->DR;                     // Lies das Ergebnis
 }
 
-int is_conflict(Vec2 pos, int dir, int length) {
+int is_conflict(Vec2 pos, int dir, int length) // Checks for conflicts with other ships
+{
     int x_start = pos.x - 1;
     int y_start = pos.y - 1;
     int x_end = pos.x + (dir == 1 ? length : 1) + 1;
@@ -83,7 +84,8 @@ int is_conflict(Vec2 pos, int dir, int length) {
     return 0;
 }
 
-void place_ship(Vec2 pos, int dir, int length) {
+void place_ship(Vec2 pos, int dir, int length) // Places the ship in the GameField
+{
     for (int i = 0; i < length; ++i) {
         int x = pos.x + (dir == 1 ? i : 0);
         int y = pos.y + (dir == 0 ? i : 0);
@@ -92,7 +94,8 @@ void place_ship(Vec2 pos, int dir, int length) {
 }
 
 // Fisher–Yates shuffle
-void shuffle(ShipPlacement *arr, int n) {
+void shuffle(ShipPlacement *arr, int n)
+{
     for (int i = n - 1; i > 0; --i) {
         int j = rand() % (i + 1);
         ShipPlacement tmp = arr[i];
@@ -101,7 +104,8 @@ void shuffle(ShipPlacement *arr, int n) {
     }
 }
 
-int create_field() {
+int create_field() // Creates ramdom GameField
+{
     memset(my_game_field, '0', ROWS * COLS);
 
     for (int s = 0; s < sizeof(ships)/sizeof(ships[0]); ++s) {
@@ -159,14 +163,6 @@ int calc_checksum() // Calculate the Checksum
 }
 
 // Smart Shooting - Checkerboard with Target method
-void update_enemy_checksum(int row)
-{
-	int row_amount = enemy_cs[row] - '0';
-	if (row_amount > 0)
-		row_amount--;
-	enemy_cs[row] = '0' + row_amount;
-}
-
 int choose_shot(char last_result, Vec2 last_shot, Vec2* shot)
 {
     /* ---------- 1.  if last shot was a hit, push neighbours  ---------- */
@@ -237,11 +233,11 @@ int _write(int handle, char *data, int size)
 
 void USART2_IRQHandler(void) // Gets an Interupt on a incoming Message
 {
-	static int ret;					  // You can do some error checking
+	//static int ret;					  // You can do some error checking
 	if (USART2->ISR & USART_ISR_RXNE) // Check if RXNE flag is set (data received)
 	{
 		uint8_t c = USART2->RDR;					// Read received byte from RDR (this automatically clears the RXNE flag)
-		ret = fifo_put((Fifo_t *)&uart_rx_fifo, c); // Put incoming Data into the FIFO Buffer for later handling
+		fifo_put((Fifo_t *)&uart_rx_fifo, c); // Put incoming Data into the FIFO Buffer for later handling //ret = 
 
 		if (c == '\n')
 		{
@@ -320,6 +316,7 @@ int main(void)
 			// Wait for Game Start
 			if (strcmp((const char *)uart_read_out, "HD_START\r\n") == 0)
 			{
+				uart_read_out[0] = '\0';
 				LOG("DH_START_KEVIN\r\n");
 				nState = 2;
 			}
@@ -350,6 +347,10 @@ int main(void)
 				position.y = uart_read_out[10] - '0';
 				uart_read_out[0] = '\0';
 				nState = 4;
+			} else if (strcmp((const char *)uart_read_out, "HD_START\r\n") == 0)
+			{
+				//nState = 1;
+				LOG("expected DH_BOOM_ message, got something else\r\n")
 			}
 			break;
 
@@ -378,7 +379,7 @@ int main(void)
 			break;
 
 		case 5: // My Shot
-			//choose_shot(result, pre_position, &position);
+			choose_shot(result, pre_position, &position);
 
 			LOG("DH_BOOM_%d_%d\r\n", position.x, position.y);
 			pre_position = position;
